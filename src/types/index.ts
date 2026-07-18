@@ -98,6 +98,19 @@ export interface InvestigationOption {
   description: string;
 }
 
+export interface ScamClue {
+  id: string;
+  text: string;       // Text segment shown in Detective Mode
+  isRedFlag: boolean; // Is this a scam sign?
+  explanation: string; // Detail shown when tapped
+}
+
+export interface ScamTimelineStep {
+  title: string;
+  description: string;
+  emoji: string;
+}
+
 export interface Scam {
   id: string;
   name: string;
@@ -111,6 +124,8 @@ export interface Scam {
   trustImpact: number; // negative number
   redFlags: string[];
   investigationOptions: InvestigationOption[];
+  clues?: ScamClue[]; // Clickable clue parts for Detective mode
+  scamTimeline?: ScamTimelineStep[]; // Sequential steps when falling for it
   learnMore: {
     howItWorks: string;
     warningSigns: string[];
@@ -119,6 +134,39 @@ export interface Scam {
 }
 
 export type ScamDecision = 'go_for_it' | 'investigate' | 'ignore';
+
+// --- Scam Awareness Phone and Boss Battle Types ---
+export interface PhoneNotification {
+  id: string;
+  sender: string;
+  type: 'sms' | 'whatsapp' | 'email' | 'call' | 'upi';
+  title: string;
+  content: string;
+  avatar: string;
+  amount?: number;
+}
+
+export interface BossQuestion {
+  id: string;
+  text: string;
+  options: {
+    text: string;
+    correct: boolean;
+    explanation: string;
+  }[];
+}
+
+export interface BossBattle {
+  bossId: string;
+  name: string;
+  emoji: string;
+  title: string;
+  description: string;
+  questions: BossQuestion[];
+  currentQuestionIndex: number;
+  playerShield: number; // Starts at 3 (representing 3 hearts)
+  bossHealth: number; // Starts at 100, drops on correct answer
+}
 
 // --- Life Events ---
 export type LifeEventCategory =
@@ -254,7 +302,11 @@ export type GamePhase =
   | 'market_update'
   | 'year_summary'
   | 'victory'
-  | 'gameover';
+  | 'gameover'
+  | 'phone_ui'
+  | 'scam_detective'
+  | 'scam_timeline'
+  | 'boss_battle';
 
 // --- Year Summary ---
 export interface YearSummary {
@@ -291,6 +343,8 @@ export interface GameState {
   // Scores
   trustScore: number; // 0-100
   knowledge: number; // 0-100
+  unlockedScamIds: string[]; // collection of scam IDs encountered/investigated
+  scamRadarScore: number; // 0-100 (Progression meter)
 
   // Portfolio
   investments: PlayerInvestment[];
@@ -309,6 +363,10 @@ export interface GameState {
   currentInvestmentOpportunity: InvestmentOption | null;
   currentMarketUpdate: MarketState | null;
   currentYearSummary: YearSummary | null;
+
+  // Phone notifications & Boss Battle
+  activePhoneNotification: PhoneNotification | null;
+  currentBossBattle: BossBattle | null;
 
   // History
   timeline: TimelineEntry[];
@@ -341,6 +399,17 @@ export interface GameActions {
   handleScamDecision: (decision: ScamDecision) => void;
   investigateScam: (methodId: string) => void;
   dismissScamResult: () => void;
+
+  // New Scam Awareness Actions
+  setPhoneNotification: (notification: PhoneNotification | null) => void;
+  triggerPhoneAction: (action: 'open' | 'block' | 'ignore' | 'verify') => void;
+  solveScamDetective: (correctVerdict: boolean) => void;
+  advanceScamTimeline: () => void;
+  dismissScamTimeline: () => void;
+  startBossBattle: (bossId: string) => void;
+  answerBossQuestion: (optionIndex: number) => void;
+  dismissBossBattle: () => void;
+  submitQuizAnswer: (correct: boolean) => void;
 
   // Career
   changeCareer: (careerId: CareerCategory) => void;

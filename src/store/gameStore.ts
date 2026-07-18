@@ -32,6 +32,7 @@ import {
   generateId,
   randomChance,
 } from '../utils/randomizers';
+import { BOSSES } from '../data/bosses';
 
 // Simple helper for compact formatting inside the store
 function formatCompact(amount: number): string {
@@ -113,6 +114,10 @@ const createInitialState = (): GameState => ({
   currentInvestmentOpportunity: null,
   currentMarketUpdate: null,
   currentYearSummary: null,
+  activePhoneNotification: null,
+  currentBossBattle: null,
+  unlockedScamIds: [],
+  scamRadarScore: 20,
   timeline: [],
   achievements: ACHIEVEMENTS.map((a) => ({ ...a })),
   stats: {
@@ -209,11 +214,54 @@ export const useGameStore = create<GameState & GameActions>()(
         const usedIds = state.timeline.filter((t) => t.type === 'life_event').map((t) => t.id);
         const lifeEvent = getRandomLifeEvent(state.age + 1, state.trustScore, usedIds);
 
-        // 3. Generate investment opportunity
+              // 3. Generate investment opportunity
         const investOpp = getRandomInvestmentOpportunity(state.knowledge);
 
-        // 4. Generate scam opportunity
-        const scam = getRandomScam(state.trustScore, state.knowledge);
+        // 4. Generate scam or boss battle opportunity
+        let currentBossBattle = null;
+        let activePhoneNotification = null;
+        let scam = null;
+        let nextPhase: GamePhase = 'market_update';
+
+        const isBossYear = (state.year + 1) % 5 === 0;
+        if (isBossYear) {
+          // Trigger boss battle based on year
+          const bossIds = ['boss_ponzi', 'boss_banker', 'boss_crypto', 'boss_lottery', 'boss_wizard', 'boss_ai'];
+          const bossIndex = Math.min(Math.floor((state.year) / 5), bossIds.length - 1);
+          const bossKey = bossIds[bossIndex] || 'boss_ponzi';
+          const bossData = BOSSES[bossKey];
+          if (bossData) {
+            currentBossBattle = {
+              ...bossData,
+              currentQuestionIndex: 0,
+              playerShield: 3,
+              bossHealth: 100,
+            };
+            nextPhase = 'boss_battle';
+          }
+        } else {
+          scam = getRandomScam(state.trustScore, state.knowledge);
+          if (scam) {
+            // Turn it into a PhoneNotification
+            let nType: 'sms' | 'whatsapp' | 'email' | 'call' | 'upi' = 'sms';
+            if (scam.category === 'phishing_sms') nType = 'sms';
+            else if (scam.category === 'fake_bank_call' || scam.category === 'fake_govt_call') nType = 'call';
+            else if (scam.category === 'tech_support') nType = 'email';
+            else if (scam.category === 'referral_scam') nType = 'whatsapp';
+            else if (scam.category === 'registration_fee') nType = 'upi';
+
+            activePhoneNotification = {
+              id: scam.id,
+              sender: scam.name,
+              type: nType,
+              title: scam.name,
+              content: scam.pitch,
+              avatar: scam.emoji,
+              amount: scam.amountRequested,
+            };
+            nextPhase = 'phone_ui';
+          }
+        }
 
         // 5. Market update
         const lastMarket = state.marketHistory.length > 0
@@ -277,6 +325,8 @@ export const useGameStore = create<GameState & GameActions>()(
           currentInvestmentOpportunity: investOpp,
           currentMarketUpdate: marketUpdate,
           marketHistory: [...state.marketHistory, marketUpdate],
+          activePhoneNotification,
+          currentBossBattle,
           stats: {
             ...state.stats,
             totalSalaryEarned: state.stats.totalSalaryEarned + yearIncome,
@@ -298,7 +348,7 @@ export const useGameStore = create<GameState & GameActions>()(
             netWorth: Math.round(newNetWorth),
             events: yearEvents,
           },
-          gamePhase: lifeEvent ? 'life_event' : investOpp ? 'investment_opportunity' : scam ? 'scam_encounter' : 'market_update',
+          gamePhase: lifeEvent ? 'life_event' : investOpp ? 'investment_opportunity' : nextPhase,
         });
 
         // Add timeline entry
@@ -377,12 +427,12 @@ export const useGameStore = create<GameState & GameActions>()(
           currentLifeEvent: null,
           gamePhase: state.currentInvestmentOpportunity
             ? 'investment_opportunity'
-            : state.currentScam
-            ? 'scam_encounter'
+            : state.currentBossBattle
+            ? 'boss_battle'
+            : state.activePhoneNotification
+            ? 'phone_ui'
             : 'market_update',
         });
-
-        get().updateNetWorth();
       },
 
       dismissLifeEvent: () => {
@@ -391,8 +441,10 @@ export const useGameStore = create<GameState & GameActions>()(
           currentLifeEvent: null,
           gamePhase: state.currentInvestmentOpportunity
             ? 'investment_opportunity'
-            : state.currentScam
-            ? 'scam_encounter'
+            : state.currentBossBattle
+            ? 'boss_battle'
+            : state.activePhoneNotification
+            ? 'phone_ui'
             : 'market_update',
         });
       },
@@ -468,7 +520,11 @@ export const useGameStore = create<GameState & GameActions>()(
         const state = get();
         set({
           currentInvestmentOpportunity: null,
-          gamePhase: state.currentScam ? 'scam_encounter' : 'market_update',
+          gamePhase: state.currentBossBattle
+            ? 'boss_battle'
+            : state.activePhoneNotification
+            ? 'phone_ui'
+            : 'market_update',
         });
       },
 
@@ -483,38 +539,10 @@ export const useGameStore = create<GameState & GameActions>()(
         const scam = state.currentScam;
 
         if (decision === 'go_for_it') {
-          // Player fell for the scam
-          const loss = scam.amountLost;
-          const newCash = Math.max(0, state.cash - loss);
-
-          const entry: TimelineEntry = {
-            id: generateId(),
-            age: state.age,
-            year: state.year,
-            type: 'scam_fallen',
-            title: `Fell for: ${scam.name}`,
-            description: `Lost ₹${loss.toLocaleString('en-IN')} to scam`,
-            financialImpact: -loss,
-            emoji: '😱',
-          };
-
-          set({
-            cash: newCash,
-            trustScore: clamp(state.trustScore + scam.trustImpact, 0, 100),
-            timeline: [...state.timeline, entry],
-            stats: {
-              ...state.stats,
-              scamsFallenFor: state.stats.scamsFallenFor + 1,
-              totalScamLoss: state.stats.totalScamLoss + loss,
-              worstDecision:
-                state.stats.worstDecision ?? `Fell for ${scam.name}`,
-            },
-            gamePhase: 'scam_result',
-          });
-
-          get().updateNetWorth();
+          // Player fell for the scam - triggers Scam Timeline presentation
+          set({ gamePhase: 'scam_timeline' });
         } else if (decision === 'investigate') {
-          set({ gamePhase: 'scam_investigation' });
+          set({ gamePhase: 'scam_detective' });
         } else {
           // Ignored
           const entry: TimelineEntry = {
@@ -530,6 +558,7 @@ export const useGameStore = create<GameState & GameActions>()(
 
           set({
             trustScore: clamp(state.trustScore + 2, 0, 100),
+            scamRadarScore: clamp(state.scamRadarScore + 2, 0, 100),
             knowledge: clamp(state.knowledge + 3, 0, 100),
             timeline: [...state.timeline, entry],
             stats: {
@@ -539,6 +568,7 @@ export const useGameStore = create<GameState & GameActions>()(
                 state.stats.bestDecision ?? `Avoided ${scam.name}`,
             },
             currentScam: null,
+            activePhoneNotification: null,
             gamePhase: 'market_update',
           });
 
@@ -572,7 +602,9 @@ export const useGameStore = create<GameState & GameActions>()(
         set({
           cash: Math.round(state.cash - cost),
           trustScore: clamp(state.trustScore + 5, 0, 100),
+          scamRadarScore: clamp(state.scamRadarScore + 5, 0, 100),
           knowledge: clamp(state.knowledge + 5, 0, 100),
+          unlockedScamIds: Array.from(new Set([...state.unlockedScamIds, scam.id])),
           timeline: [...state.timeline, entry],
           stats: {
             ...state.stats,
@@ -581,6 +613,7 @@ export const useGameStore = create<GameState & GameActions>()(
               state.stats.bestDecision ?? `Investigated ${scam.name}`,
           },
           currentScam: null,
+          activePhoneNotification: null,
           gamePhase: 'scam_result',
         });
 
@@ -591,8 +624,268 @@ export const useGameStore = create<GameState & GameActions>()(
       dismissScamResult: () => {
         set({
           currentScam: null,
+          activePhoneNotification: null,
           gamePhase: 'market_update',
         });
+      },
+
+      // ==========================================
+      // New Scam Awareness Actions
+      // ==========================================
+
+      setPhoneNotification: (notification) => {
+        set({ activePhoneNotification: notification });
+      },
+
+      triggerPhoneAction: (action) => {
+        const state = get();
+        const scam = state.currentScam;
+        if (!scam) return;
+
+        if (action === 'ignore') {
+          const entry: TimelineEntry = {
+            id: generateId(),
+            age: state.age,
+            year: state.year,
+            type: 'scam_avoided',
+            title: `Avoided: ${scam.name}`,
+            description: 'Ignored the suspicious alert.',
+            financialImpact: 0,
+            emoji: '🛡️',
+          };
+          set({
+            trustScore: clamp(state.trustScore + 2, 0, 100),
+            scamRadarScore: clamp(state.scamRadarScore + 2, 0, 100),
+            timeline: [...state.timeline, entry],
+            stats: {
+              ...state.stats,
+              scamsAvoided: state.stats.scamsAvoided + 1,
+            },
+            currentScam: null,
+            activePhoneNotification: null,
+            gamePhase: 'market_update',
+          });
+        } else if (action === 'block') {
+          const entry: TimelineEntry = {
+            id: generateId(),
+            age: state.age,
+            year: state.year,
+            type: 'scam_avoided',
+            title: `Blocked: ${scam.name}`,
+            description: 'Blocked phone sender and reported the scam text to helplines.',
+            financialImpact: 0,
+            emoji: '🚫',
+          };
+          set({
+            trustScore: clamp(state.trustScore + 5, 0, 100),
+            scamRadarScore: clamp(state.scamRadarScore + 6, 0, 100),
+            knowledge: clamp(state.knowledge + 3, 0, 100),
+            unlockedScamIds: Array.from(new Set([...state.unlockedScamIds, scam.id])),
+            timeline: [...state.timeline, entry],
+            stats: {
+              ...state.stats,
+              scamsAvoided: state.stats.scamsAvoided + 1,
+            },
+            currentScam: null,
+            activePhoneNotification: null,
+            gamePhase: 'market_update',
+          });
+        } else if (action === 'open') {
+          set({ gamePhase: 'scam_encounter' });
+        } else if (action === 'verify') {
+          set({ gamePhase: 'scam_investigation' });
+        }
+      },
+
+      solveScamDetective: (correctVerdict) => {
+        const state = get();
+        const scam = state.currentScam;
+        if (!scam) return;
+
+        if (correctVerdict) {
+          // Spotted successfully!
+          const entry: TimelineEntry = {
+            id: generateId(),
+            age: state.age,
+            year: state.year,
+            type: 'scam_avoided',
+            title: `Scam Detected: ${scam.name}`,
+            description: 'Correctly scanned and flagged red flags inside the pitch.',
+            financialImpact: 0,
+            emoji: '🛡️',
+          };
+          set({
+            trustScore: clamp(state.trustScore + 6, 0, 100),
+            scamRadarScore: clamp(state.scamRadarScore + 15, 0, 100),
+            knowledge: clamp(state.knowledge + 5, 0, 100),
+            unlockedScamIds: Array.from(new Set([...state.unlockedScamIds, scam.id])),
+            timeline: [...state.timeline, entry],
+            stats: {
+              ...state.stats,
+              scamsAvoided: state.stats.scamsAvoided + 1,
+            },
+            gamePhase: 'scam_result',
+          });
+        } else {
+          // Wrong verdict (declared legitimate) -> triggers scam timeline loss sequence!
+          set({ gamePhase: 'scam_timeline' });
+        }
+      },
+
+      advanceScamTimeline: () => {
+        // Handled in React component internally until completed, then calls dismiss
+      },
+
+      dismissScamTimeline: () => {
+        const state = get();
+        const scam = state.currentScam;
+        if (!scam) return;
+
+        // Apply financial loss since they fell for the scam
+        const loss = scam.amountLost;
+        const newCash = Math.max(0, state.cash - loss);
+
+        const entry: TimelineEntry = {
+          id: generateId(),
+          age: state.age,
+          year: state.year,
+          type: 'scam_fallen',
+          title: `Fell for: ${scam.name}`,
+          description: `Lost ₹${loss.toLocaleString('en-IN')} to scam`,
+          financialImpact: -loss,
+          emoji: '😱',
+        };
+
+        set({
+          cash: newCash,
+          trustScore: clamp(state.trustScore + scam.trustImpact, 0, 100),
+          scamRadarScore: clamp(state.scamRadarScore - 12, 0, 100),
+          timeline: [...state.timeline, entry],
+          stats: {
+            ...state.stats,
+            scamsFallenFor: state.stats.scamsFallenFor + 1,
+            totalScamLoss: state.stats.totalScamLoss + loss,
+            worstDecision: state.stats.worstDecision ?? `Fell for ${scam.name}`,
+          },
+          currentScam: null,
+          activePhoneNotification: null,
+          gamePhase: 'scam_result',
+        });
+
+        get().updateNetWorth();
+      },
+
+      startBossBattle: (bossId) => {
+        const bossData = BOSSES[bossId];
+        if (!bossData) return;
+        set({
+          currentBossBattle: {
+            ...bossData,
+            currentQuestionIndex: 0,
+            playerShield: 3,
+            bossHealth: 100,
+          },
+          gamePhase: 'boss_battle',
+        });
+      },
+
+      answerBossQuestion: (optionIndex) => {
+        const state = get();
+        const battle = state.currentBossBattle;
+        if (!battle) return;
+
+        const currentQuestion = battle.questions[battle.currentQuestionIndex];
+        const selectedOption = currentQuestion.options[optionIndex];
+        if (!selectedOption) return;
+
+        let nextHealth = battle.bossHealth;
+        let nextShield = battle.playerShield;
+
+        if (selectedOption.correct) {
+          nextHealth = Math.max(0, battle.bossHealth - Math.ceil(100 / battle.questions.length));
+        } else {
+          nextShield = Math.max(0, battle.playerShield - 1);
+        }
+
+        const nextQuestionIndex = battle.currentQuestionIndex + 1;
+        const isBattleFinished = nextHealth <= 0 || nextShield <= 0 || nextQuestionIndex >= battle.questions.length;
+
+        if (isBattleFinished) {
+          if (nextHealth <= 0 || (selectedOption.correct && nextQuestionIndex >= battle.questions.length)) {
+            // Player won!
+            const entry: TimelineEntry = {
+              id: generateId(),
+              age: state.age,
+              year: state.year,
+              type: 'scam_avoided',
+              title: `Defeated Boss: ${battle.title}`,
+              description: `Correctly answered scam questions and exposed ${battle.name}.`,
+              financialImpact: 0,
+              emoji: '🏆',
+            };
+            set({
+              trustScore: clamp(state.trustScore + 10, 0, 100),
+              scamRadarScore: clamp(state.scamRadarScore + 20, 0, 100),
+              knowledge: clamp(state.knowledge + 10, 0, 100),
+              timeline: [...state.timeline, entry],
+              currentBossBattle: null,
+              gamePhase: 'market_update',
+            });
+          } else {
+            // Player lost (shield ran out or failed to defeat boss)
+            const lossAmount = Math.round(state.cash * 0.2); // lose 20% cash to boss
+            const newCash = Math.max(0, state.cash - lossAmount);
+            const entry: TimelineEntry = {
+              id: generateId(),
+              age: state.age,
+              year: state.year,
+              type: 'scam_fallen',
+              title: `Scammed by Boss: ${battle.title}`,
+              description: `Fell for tricks of ${battle.name}. Lost ₹${lossAmount.toLocaleString('en-IN')}`,
+              financialImpact: -lossAmount,
+              emoji: '💀',
+            };
+            set({
+              cash: newCash,
+              trustScore: clamp(state.trustScore - 15, 0, 100),
+              scamRadarScore: clamp(state.scamRadarScore - 15, 0, 100),
+              timeline: [...state.timeline, entry],
+              currentBossBattle: null,
+              gamePhase: 'market_update',
+            });
+            get().updateNetWorth();
+          }
+        } else {
+          // Next question
+          set({
+            currentBossBattle: {
+              ...battle,
+              currentQuestionIndex: nextQuestionIndex,
+              bossHealth: nextHealth,
+              playerShield: nextShield,
+            },
+          });
+        }
+      },
+
+      dismissBossBattle: () => {
+        set({ currentBossBattle: null, gamePhase: 'market_update' });
+      },
+
+      submitQuizAnswer: (correct) => {
+        const state = get();
+        if (correct) {
+          set({
+            trustScore: clamp(state.trustScore + 3, 0, 100),
+            scamRadarScore: clamp(state.scamRadarScore + 6, 0, 100),
+            knowledge: clamp(state.knowledge + 4, 0, 100),
+          });
+        } else {
+          set({
+            trustScore: clamp(state.trustScore - 1, 0, 100),
+            scamRadarScore: clamp(state.scamRadarScore - 3, 0, 100),
+          });
+        }
       },
 
       // ==========================================
@@ -711,6 +1004,9 @@ export const useGameStore = create<GameState & GameActions>()(
                 handleLifeEvent: _hle, dismissLifeEvent: _dle, makeInvestment: _mi,
                 sellInvestment: _si, dismissInvestmentOpportunity: _dio,
                 handleScamDecision: _hsd, investigateScam: _is, dismissScamResult: _dsr,
+                setPhoneNotification: _spn, triggerPhoneAction: _tpa, solveScamDetective: _ssd,
+                advanceScamTimeline: _ast, dismissScamTimeline: _dst, startBossBattle: _sbb,
+                answerBossQuestion: _abq, dismissBossBattle: _dbb, submitQuizAnswer: _sqa,
                 changeCareer: _cc, acknowledgeMarketUpdate: _amu,
                 acknowledgeYearSummary: _ays, saveGame: _ssg, loadGame: _lg,
                 addToLeaderboard: _atl, updateNetWorth: _unw, ...rest } = state;

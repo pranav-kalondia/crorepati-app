@@ -3,6 +3,7 @@
 // ============================================================
 
 import type { Scam } from '../types';
+import { SCAM_DETAILS } from './scamDetails';
 
 export const SCAMS: Scam[] = [
   {
@@ -408,3 +409,13 @@ export const SCAMS: Scam[] = [
     },
   },
 ];
+
+// Enrich the SCAMS array with interactive clues and timelines
+SCAMS.forEach((scam) => {
+  const details = SCAM_DETAILS[scam.id];
+  if (details) {
+    scam.clues = details.clues;
+    scam.scamTimeline = details.scamTimeline;
+  }
+});
+
