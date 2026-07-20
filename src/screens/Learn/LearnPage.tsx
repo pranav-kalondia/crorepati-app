@@ -79,6 +79,55 @@ const QUIZ_QUESTIONS: QuizQuestion[] = [
       { text: "No, tax refunds are automatically credited directly to registered accounts.", correct: true, explanation: "Correct! Official refunds go straight to your bank. Links in text alerts are phishing hooks." },
       { text: "Yes, you must click and log in via the link to select your bank portal.", correct: false, explanation: "Wrong! Clicking these links leads to fake pages that steal your bank username and password." }
     ]
+  },
+  {
+    question: "If someone calls on a WhatsApp video call claiming they are police/TRAI officials and placing you under 'digital arrest', what should you do?",
+    options: [
+      { text: "Hang up immediately. Government and police agencies never arrest anyone over video calls or demand online payments.", correct: true, explanation: "Correct! Official agencies never conduct arrests over video call or demand money online. Scammers use psychological pressure and fear to extort money." },
+      { text: "Stay on the call, keep your camera on, and transfer the requested amount to clear your name.", correct: false, explanation: "Wrong! Video calls claiming digital arrest are 100% scams. Official procedures involve physical summons, not video chat threats." }
+    ]
+  },
+  {
+    question: "A contact online offers you a commission to open a bank account in your name or rent out your existing bank account. Is this safe?",
+    options: [
+      { text: "No. Renting or opening bank accounts for others is illegal and makes you an accomplice to money laundering (Mule Account fraud).", correct: true, explanation: "Correct! Fraudulent networks use rented accounts ('mule accounts') to launder stolen money. If the account is used for crime, the account holder is legally responsible." },
+      { text: "Yes, it is a safe way to earn passive income as long as you do not share your ATM card PIN.", correct: false, explanation: "Wrong! Supplying bank accounts to others, even without PINs, is illegal money laundering facilitation. Police will freeze your accounts and take legal action." }
+    ]
+  },
+  {
+    question: "You receive a WhatsApp message from a number using your company CEO's photo, ordering you to make an urgent financial transfer immediately. What is the first step?",
+    options: [
+      { text: "Verify the request independently via a direct call or official internal company channels before sending any funds.", correct: true, explanation: "Correct! CEO/MD impersonation scams trick employees into transferring funds by creating a sense of urgency. Always confirm verbally via known numbers." },
+      { text: "Process the transfer immediately to avoid getting fired or angering the CEO.", correct: false, explanation: "Wrong! Scammers scrape executive profiles to set up fake WhatsApp/email profiles. Always verify corporate transfers independently." }
+    ]
+  },
+  {
+    question: "You receive an SMS warning you of an unpaid traffic e-challan or electricity bill, with a link to download an APK file to view it. What should you do?",
+    options: [
+      { text: "Delete the SMS. Official departments never send APK download links. Installing unofficial APKs can compromise your mobile device.", correct: true, explanation: "Correct! Installing malicious APK files allows scammers to read your SMS (including OTPs), steal credentials, and compromise your mobile banking apps." },
+      { text: "Download and install the APK to verify the bill details and avoid legal penalties.", correct: false, explanation: "Wrong! Government departments use official web portals, not custom APK file shares. Downloading random APKs compromises your phone's security sandbox." }
+    ]
+  },
+  {
+    question: "While booking a hotel or temple guest house online, you find a website with heavy discounts asking for immediate advance payments. How do you verify it?",
+    options: [
+      { text: "Verify details through official tourism department channels or contact the hotel directly using a number from their official listing.", correct: true, explanation: "Correct! Scammers create fake hotel websites and search listings to steal advance payments from tourists and devotees." },
+      { text: "Pay immediately since they claim the rooms are filling fast and offer massive discounts.", correct: false, explanation: "Wrong! False urgency is a key scam sign. Always double-check hotel websites and direct contacts through trusted travel guides." }
+    ]
+  },
+  {
+    question: "A caller claiming to be from your bank offers a credit card limit upgrade and asks you to share the OTP sent to your phone. What should you do?",
+    options: [
+      { text: "Refuse and hang up. Banks will never ask for OTPs, PINs, or card CVVs to process upgrades or reward points.", correct: true, explanation: "Correct! Bank staff will never request sensitive security credentials. OTP sharing is only used to authorize debit transactions from your account." },
+      { text: "Share the OTP to ensure you do not miss out on the credit card limit upgrade.", correct: false, explanation: "Wrong! Bank executives are forbidden from asking for passwords or OTPs. Sharing it grants scammers full access to drain your credit card balance." }
+    ]
+  },
+  {
+    question: "If you are a victim of cybercrime and want to claim a refund for siphoned funds, how should you proceed?",
+    options: [
+      { text: "Use only the official Money Restoration Module (MRM) on the National Cybercrime Portal. Avoid third-party 'refund recovery' agents.", correct: true, explanation: "Correct! There are many fake recovery agents online who scam victims again. The government's Money Restoration Module (MRM) is the only official, legal way to trace and restore blocked funds." },
+      { text: "Search online for private recovery agents who guarantee refunding siphoned money for an upfront fee.", correct: false, explanation: "Wrong! Private recovery agents charging upfront fees are almost always secondary scams targeting already vulnerable victims." }
+    ]
   }
 ];
 
@@ -89,6 +138,7 @@ export function LearnPage() {
 
   // Quiz State
   const [quizActive, setQuizActive] = useState(false);
+  const [activeQuestions, setActiveQuestions] = useState<QuizQuestion[]>([]);
   const [quizIndex, setQuizIndex] = useState(0);
   const [selectedAnsIdx, setSelectedAnsIdx] = useState<number | null>(null);
   const [quizScore, setQuizScore] = useState(0);
@@ -114,6 +164,8 @@ export function LearnPage() {
   };
 
   const startQuiz = () => {
+    const shuffled = [...QUIZ_QUESTIONS].sort(() => 0.5 - Math.random());
+    setActiveQuestions(shuffled.slice(0, 3));
     setQuizActive(true);
     setQuizIndex(0);
     setSelectedAnsIdx(null);
@@ -124,7 +176,7 @@ export function LearnPage() {
 
   const handleSelectAnswer = (idx: number) => {
     setSelectedAnsIdx(idx);
-    const correct = QUIZ_QUESTIONS[quizIndex].options[idx].correct;
+    const correct = activeQuestions[quizIndex]?.options[idx].correct;
     if (correct) {
       setQuizScore((prev) => prev + 1);
       audio.playCoin();
@@ -142,7 +194,7 @@ export function LearnPage() {
     } else {
       // Finished
       setShowQuizResult(true);
-      const wonQuiz = quizScore + (QUIZ_QUESTIONS[quizIndex].options[selectedAnsIdx || 0].correct ? 1 : 0) >= 3;
+      const wonQuiz = quizScore + (activeQuestions[quizIndex]?.options[selectedAnsIdx || 0].correct ? 1 : 0) >= 3;
       game.submitQuizAnswer(wonQuiz);
     }
   };
@@ -282,11 +334,11 @@ export function LearnPage() {
                 </div>
 
                 <p className="text-xs font-semibold text-white leading-relaxed">
-                  {QUIZ_QUESTIONS[quizIndex].question}
+                  {activeQuestions[quizIndex]?.question}
                 </p>
 
                 <div className="space-y-2">
-                  {QUIZ_QUESTIONS[quizIndex].options.map((option, idx) => {
+                  {activeQuestions[quizIndex]?.options.map((option, idx) => {
                     const isSelected = selectedAnsIdx === idx;
                     let optionBorders = 'border-white/10 bg-white/2 hover:bg-white/5';
                     if (selectedAnsIdx !== null) {
@@ -315,22 +367,22 @@ export function LearnPage() {
                   })}
                 </div>
 
-                {selectedAnsIdx !== null && (
+                {selectedAnsIdx !== null && activeQuestions[quizIndex] && (
                   <motion.div
                     initial={{ opacity: 0, y: 5 }}
                     animate={{ opacity: 1, y: 0 }}
                     className={`p-3 rounded-xl border text-[11px] leading-relaxed flex gap-2 ${
-                      QUIZ_QUESTIONS[quizIndex].options[selectedAnsIdx].correct
+                      activeQuestions[quizIndex].options[selectedAnsIdx].correct
                         ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
                         : 'bg-red-500/10 border-red-500/20 text-red-300'
                     }`}
                   >
-                    {QUIZ_QUESTIONS[quizIndex].options[selectedAnsIdx].correct ? (
+                    {activeQuestions[quizIndex].options[selectedAnsIdx].correct ? (
                       <CheckCircle size={14} className="flex-shrink-0 mt-0.5" />
                     ) : (
                       <XCircle size={14} className="flex-shrink-0 mt-0.5" />
                     )}
-                    <p>{QUIZ_QUESTIONS[quizIndex].options[selectedAnsIdx].explanation}</p>
+                    <p>{activeQuestions[quizIndex].options[selectedAnsIdx].explanation}</p>
                   </motion.div>
                 )}
 
